@@ -280,7 +280,7 @@ node work-2026-10-27/.bj-agents/scripts/verify_file_hit.js
 | `archive/` 占 122.10 MB | 按决策只归档不删 | 占磁盘 | 确认旧 ZIP 未外发后可整体删除 |
 | `dist/sheep-frames-pack.zip` 内含修复前旧素材 | 已归档，易误用 | 误用会拿到旧素材 | 对外发素材包须重新打包 |
 | `__pycache__` 会再生 | 运行 Python 脚本时生成 | 混入未跟踪文件 | 已加 `.gitignore` |
-| 项目尚未初始化 Git | 无 `.git` 目录 | 无版本控制 | 本轮按约束**未执行 `git init`** |
+| Git 仓库已建立 | 2026-11-03 已 `git init` 并推送至 `https://github.com/taylor000106/sheep-runner`（main，公开） | 无 | 仅提交正式交付内容；`.bj-agents/` 与 `archive/` 仅本地保留 |
 
 ---
 
