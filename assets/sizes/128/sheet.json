@@ -1,0 +1,118 @@
+{
+  "image": "assets/sizes/128/sheep_run_sheet.png",
+  "label": "128 移动端/小图标",
+  "frameWidth": 128,
+  "frameHeight": 128,
+  "gap": 0,
+  "count": 4,
+  "layout": "vertical",
+  "axis": "y",
+  "anchor": {
+    "x": 63.5,
+    "y": 120
+  },
+  "anchorNote": "锚点=脚底中心。四帧 content.bottom 全部等于 anchor.y，把锚点钉在地面线上即可保证跑步时脚不上下漂。anchor.x = frameWidth/2 - 0.5（F2~F4 的对称中心；F1 因手部细节偏差 0.5px，可忽略）。",
+  "poses": [
+    "F1 左腿后蹬 / 右腿前迈",
+    "F2 腾空过渡（偏右腿前，身体最高）",
+    "F3 右腿后蹬 / 左腿前迈 = F1 水平镜像",
+    "F4 腾空过渡（偏左腿前）= F2 水平镜像"
+  ],
+  "mirrorPairs": {
+    "F1_vs_mirror_F3_iou": 0.951,
+    "F2_vs_mirror_F4_iou": 1.0,
+    "说明": "两两互为镜像，四步循环左右完全对称"
+  },
+  "loopStepDiff": [
+    0.215,
+    0.269,
+    0.221,
+    0.258
+  ],
+  "contentHeightRange": [
+    113,
+    109
+  ],
+  "contentHeightEach": [
+    109,
+    113,
+    109,
+    113
+  ],
+  "bodyBob": "头顶起伏 4 px = 身高 3.7%，即轻微上下起伏",
+  "referenceContentHeight": 111.0,
+  "referenceNote": "接进游戏时用该值换算显示高度（四帧内容高均值）",
+  "suggestedFps": [
+    8,
+    10,
+    12
+  ],
+  "loopOrder": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "frames": [
+    {
+      "index": 0,
+      "x": 0,
+      "y": 0,
+      "w": 128,
+      "h": 128,
+      "content": {
+        "left": 19,
+        "top": 11,
+        "right": 107,
+        "bottom": 120,
+        "cx": 63.0,
+        "height": 109
+      }
+    },
+    {
+      "index": 1,
+      "x": 0,
+      "y": 128,
+      "w": 128,
+      "h": 128,
+      "content": {
+        "left": 22,
+        "top": 7,
+        "right": 105,
+        "bottom": 120,
+        "cx": 63.5,
+        "height": 113
+      }
+    },
+    {
+      "index": 2,
+      "x": 0,
+      "y": 256,
+      "w": 128,
+      "h": 128,
+      "content": {
+        "left": 19,
+        "top": 11,
+        "right": 107,
+        "bottom": 120,
+        "cx": 63.0,
+        "height": 109
+      }
+    },
+    {
+      "index": 3,
+      "x": 0,
+      "y": 384,
+      "w": 128,
+      "h": 128,
+      "content": {
+        "left": 22,
+        "top": 7,
+        "right": 105,
+        "bottom": 120,
+        "cx": 63.5,
+        "height": 113
+      }
+    }
+  ]
+}

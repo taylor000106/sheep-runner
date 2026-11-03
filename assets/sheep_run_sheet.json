@@ -1,0 +1,55 @@
+{
+  "image": "assets/sheep_run_sheet.png",
+  "frameWidth": 640,
+  "frameHeight": 640,
+  "gap": 24,
+  "count": 4,
+  "layout": "vertical",
+  "axis": "y",
+  "anchor": {
+    "x": 320,
+    "y": 603
+  },
+  "frames": [
+    {
+      "index": 0,
+      "x": 0,
+      "y": 0,
+      "w": 640,
+      "h": 640
+    },
+    {
+      "index": 1,
+      "x": 0,
+      "y": 664,
+      "w": 640,
+      "h": 640
+    },
+    {
+      "index": 2,
+      "x": 0,
+      "y": 1328,
+      "w": 640,
+      "h": 640
+    },
+    {
+      "index": 3,
+      "x": 0,
+      "y": 1992,
+      "w": 640,
+      "h": 640
+    }
+  ],
+  "suggestedFps": [
+    8,
+    10,
+    12
+  ],
+  "loopOrder": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "note": "脚底基线 y=603；帧间 24px 透明间隔，取帧时不要包含间隔"
+}

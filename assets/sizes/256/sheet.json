@@ -1,0 +1,137 @@
+{
+  "image": "assets/sizes/256/sheep_run_sheet.png",
+  "label": "256 推荐",
+  "frameWidth": 256,
+  "frameHeight": 256,
+  "gap": 0,
+  "count": 4,
+  "layout": "vertical",
+  "axis": "y",
+  "anchor": {
+    "x": 127.5,
+    "y": 241
+  },
+  "anchorNote": "锚点=脚底中心。四帧 content.bottom 全部等于 anchor.y，把锚点钉在地面线上即可保证跑步时脚不上下漂。anchor.x = frameWidth/2 - 0.5（F2~F4 的对称中心；F1 因手部细节偏差 0.5px，可忽略）。",
+  "poses": [
+    "F1 右腿支撑（着地）/ 左腿摆动（抬升14，宽69）",
+    "F2 左腿支撑（着地）/ 右腿摆动（抬升44，宽71）",
+    "F3 右腿支撑（着地）/ 左腿摆动（抬升23，宽72）",
+    "F4 左腿支撑（着地）/ 右腿摆动（抬升28，宽63）—— 独立原创，非任何帧镜像"
+  ],
+  "mirrorPairs": {
+    "F1_vs_mirror_F3_iou": 0.9498,
+    "F2_vs_mirror_F4_iou": 0.8385,
+    "F4_vs_F2_iou": 0.9919,
+    "说明": "F1/F3 仍近似镜像(0.9498，源自早期母版)；F4 已重绘为独立姿态，与 mirror(F2) 相似度降到 0.8385（重绘前为 1.0000 精确镜像），且与 mirror(F1)=0.7436、mirror(F3)=0.7734 均不构成镜像"
+  },
+  "loopStepDiff": [
+    0.217,
+    0.271,
+    0.268,
+    0.219
+  ],
+  "contentHeightRange": [
+    220,
+    229
+  ],
+  "contentHeightEach": [
+    221,
+    229,
+    220,
+    229
+  ],
+  "bodyBob": "头顶起伏 9 px = 身高 4.1%，即轻微上下起伏",
+  "referenceContentHeight": 224.8,
+  "referenceNote": "接进游戏时用该值换算显示高度（四帧内容高均值）",
+  "suggestedFps": [
+    8,
+    10,
+    12
+  ],
+  "loopOrder": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "frames": [
+    {
+      "index": 0,
+      "x": 0,
+      "y": 0,
+      "w": 256,
+      "h": 256,
+      "content": {
+        "left": 39,
+        "top": 22,
+        "right": 215,
+        "bottom": 241,
+        "cx": 127.0,
+        "height": 219
+      }
+    },
+    {
+      "index": 1,
+      "x": 0,
+      "y": 256,
+      "w": 256,
+      "h": 256,
+      "content": {
+        "left": 44,
+        "top": 13,
+        "right": 211,
+        "bottom": 241,
+        "cx": 127.5,
+        "height": 228
+      }
+    },
+    {
+      "index": 2,
+      "x": 0,
+      "y": 512,
+      "w": 256,
+      "h": 256,
+      "content": {
+        "left": 39,
+        "top": 22,
+        "right": 216,
+        "bottom": 241,
+        "cx": 127.5,
+        "height": 219
+      }
+    },
+    {
+      "index": 3,
+      "x": 0,
+      "y": 768,
+      "w": 256,
+      "h": 256,
+      "content": {
+        "left": 44,
+        "top": 13,
+        "right": 211,
+        "bottom": 241,
+        "cx": 127.5,
+        "height": 228
+      }
+    }
+  ],
+  "loopStepDiffNote": "相邻帧 1-IoU（alpha>24，256 档），越大差异越大；四步均 ≥0.217，无重复帧",
+  "gaitNote": "支撑腿序列 右→左→右→左（1:1 交替，重绘前为 右→左→右→右 即 3:1）；摆动腿抬升 14/44/23/28；四帧脚底均 = anchor.y=241，头顶起伏 55/34/55/34(640 档)",
+  "f4Redraw": {
+    "说明": "F4 于本轮重绘：保留 F2 版型与羊毛过渡，右腿整块（含抗锯齿边）下移 16px、外移 8px（640 档），腿根用羊毛向下延续填充",
+    "lift_before_after_640": [
+      44,
+      28
+    ],
+    "width_before_after_640": [
+      71,
+      63
+    ],
+    "area_before_after_640": [
+      2443,
+      2850
+    ],
+    "连通性": "整帧单连通块（无碎片/无断裂），与原四帧一致"
+  }
+}
