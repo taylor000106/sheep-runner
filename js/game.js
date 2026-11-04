@@ -1544,42 +1544,42 @@
     ctx.restore();
   }
 
-  /* ---- 角色：4 帧跑步精灵图 ----
-     素材取 sizes/256/：竖排 4 帧、每帧 256×256、帧间无间隔，元数据见同目录 sheet.json。
-     帧序 1→2→3→4 就是一次完整的左右交替步：
-       F1 左腿后蹬  F2 腾空(偏右腿前)  F3 右腿后蹬(=F1 镜像)  F4 腾空(偏左腿前)(=F2 镜像)
-     镜像关系已实测：F1 vs mirror(F3) IoU=0.950，F2 vs mirror(F4) IoU=1.000 —— 两两配对整齐，
-     所以四步是一个左右完全对称的循环，不会出现「一步腿长一步腿短」。
-     四帧脚底都对齐在锚点 y=241，所以只要把「锚点」钉在地面线上，跑步过程中脚就不会上下漂。
+  /* ---- 角色：8 帧跑步精灵图 ----
+     素材取 sizes/256/：竖排 8 帧、每帧 256×256、帧间无间隔，元数据见同目录 sheet.json。
+     帧序 1→8 就是一次完整的左右交替步（正后方视角，画面临左右即角色左右）：
+       实测腿部墨量占比：F1/F2 抬右腿（46.7% / 45.7%），F5/F6/F7 抬左腿（51.5% / 50.5% / 50.6%），
+       F3/F4/F8 为过渡帧 —— 一个循环内左右各抬一次，不会出现「只迈一条腿」。
+     八帧脚底都对齐在锚点 y=241，所以只要把「锚点」钉在地面线上，跑步过程中脚就不会上下漂。
      因此这里不再给角色本体加任何垂直/水平位移（改造前靠 bobY/bobX 伪造起伏）。
      拆分版读外部文件；tools/build.py 会按这一行的路径把图片换成内嵌 base64。 */
   var RUN_SHEET_SRC = 'assets/sizes/256/sheep_run_sheet.png';
   var RUN_FRAME = 256;        // 单帧边长（源像素）
-  var RUN_COUNT = 4;          // 帧数（= 一个步幅周期的步数）
+  var RUN_COUNT = 8;          // 帧数（= 一个步幅周期的帧数）
   var RUN_ANCHOR_X = 127.5;   // 锚点（脚底中心）在帧内的 x（F1 为 127.0，其余 127.5）
-  var RUN_ANCHOR_Y = 241;     // 锚点 y —— 四帧脚底都落在这一条线上
-  // 尺度对齐：旧站立贴图内容高 882px 对应 2.30u。新帧内容高实测（256 版）依次为
-  // 219/228/219/228，取四帧均值 223.5 作为 2.30u 的基准，
-  // 这样换图后角色在屏幕上的平均高度与改造前一致，不改变画面构图。
-  var RUN_REF_CONTENT = 223.5;
+  var RUN_ANCHOR_Y = 241;     // 锚点 y —— 八帧脚底都落在这一条线上
+  // 尺度对齐：旧站立贴图内容高 882px 对应 2.30u。新 8 帧素材逐帧实测内容高（256 版）
+  // 均为 170px（原图 676px × 1/4，八帧一致），取它作为 2.30u 的基准，
+  // 这样换图后角色在屏幕上的高度与改造前一致，不改变画面构图。
+  var RUN_REF_CONTENT = 170;
   var RUN_FRAME_U = 2.30 * RUN_FRAME / RUN_REF_CONTENT;   // 整帧在 u 单位下的边长
   var RUN_K = RUN_FRAME_U / RUN_FRAME;                    // 源像素 → u 单位的换算
 
-  /* —— 受击蹲伏（dying 专用姿势）——
-     单独一张 256×256 图，不并入跑步 sheet：sheet 仍是 256×1024（帧间无间隔），
-     所以「四帧竖排、源 y = {0,256,512,768}」那套断言一条都不用改。
+  /* —— 受击定格（dying 专用姿势）——
+     单独一张 256×256 图，不并入跑步 sheet：sheet 已是 256×2048（8 帧竖排、帧间无间隔），
+     受击图与跑步帧彻底分离，改帧数碰不到它。
 
-     这张图与跑步帧同源，锚点直接复用、未重算（实测）：
-       不透明 bbox = x 46..209、y 46..241
+     图片来源：取 8 帧跑步动画的 F4（四肢最收拢、重心最低的一帧）原样落成一张单体图，
+     所以「撞到炸弹」那一刻看到的小羊，与跑动中是同一个形象
+     （此前用的是旧 4 帧时代那张蹲伏图，风格与新素材对不上）。
+     同源同帧尺寸，锚点天然一致（实测，alpha>24）：
+       bbox = x 72..183、y 72..241
        → bbox 中心 x = 127.5 = RUN_ANCHOR_X
        → 脚底 y      = 241   = RUN_ANCHOR_Y
-     因此 RUN_ANCHOR_X/Y、RUN_K、RUN_FRAME_U 全部沿用，不引入第二套尺度。
-     内容高 196px = RUN_REF_CONTENT(223.5) 的 87.7%：同一全局缩放下自然显矮，
-     正是「被炸得腿软蹲下去」该有的比例，不需要再压扁。
+     尺度：该帧内容高恰为 170px，与 RUN_REF_CONTENT 相同 → HIT_K 数值上等于 RUN_K，
+     跑步 ↔ 受击切换时角色大小零跳变（不会突然缩一下）。
 
-     绕锚点旋转会让最低点探到地面线以下。实测（θ=0.25，逐像素量）：额外下探 24.1 源像素
-     = 0.248u；早期按「最外一点×tanθ」估的 0.2007 把单位弄错了，少抬约 5 倍，
-     且抬升量当时是在 ctx.scale(u,u) 之后 translate，单位又变成源像素，
+     绕锚点旋转会让最低点探到地面线以下。早期按「最外一点×tanθ」估的抬升量把单位弄错了，
+     少抬约 5 倍；且抬升量当时是在 ctx.scale(u,u) 之后 translate，单位又变成源像素，
      实际只抬 0.1 屏幕像素——两项叠加等于没抬，于是改用下面这套查表。
 
      做法：图片加载后按真实不透明轮廓预采样一张 θ → 需抬升量(u) 的小表，
@@ -1587,8 +1587,12 @@
      画布被 file:// 污染、取不到像素时退回保守解析上界（maxX·sinθ + maxUp·(1-cosθ)），
      同样只会多抬、不会少抬。 */
   var HIT_SHEET_SRC = 'assets/sizes/256/sheep_hit.png';
-  var HIT_DIP_MAX_DX = 81.5;    // 轮廓相对锚点的最右偏移（源像素，实测 x 46..209，锚点 127.5）
-  var HIT_DIP_MAX_UP = 195;     // 轮廓相对锚点的最高偏移（源像素，实测 y 46..241）
+  // 受击图与跑步帧同源同尺：基准内容高就取该帧实测的 170px，两套 K 数值相等。
+  var HIT_REF_CONTENT = 170;
+  var HIT_K = 2.30 / HIT_REF_CONTENT;          // 源像素 → u（≈0.013529，等于 RUN_K）
+  var HIT_FRAME_U = HIT_K * RUN_FRAME;         // 受击图整帧边长（≈3.4647u，等于 RUN_FRAME_U）
+  var HIT_DIP_MAX_DX = 55.5;    // 轮廓相对锚点的最右偏移（源像素，实测 x 72..183，锚点 127.5）
+  var HIT_DIP_MAX_UP = 169;     // 轮廓相对锚点的最高偏移（源像素，实测 y 72..241）
   var HIT_DIP_N = 48;           // 采样段数：0.30rad 分 48 段，单段 0.00625rad
   var HIT_DIP_MAXTH = 0.30;     // 表覆盖的最大倾角（实际最大 0.25，留余量）
   var HIT_DIP_LUT = null;       // null=未构建；数组=查表；false=构建失败走解析上界
@@ -1618,7 +1622,7 @@
           var v = px[k] * s + py[k] * c1;
           if (v > best) best = v;
         }
-        lut.push((best + 0.5) * RUN_K);   // 源像素 → u，另加 0.5 源像素安全余量
+        lut.push((best + 0.5) * HIT_K);   // 源像素 → u，另加 0.5 源像素安全余量
       }
       for (var j = 1; j <= HIT_DIP_N; j++) lut[j] = Math.max(lut[j], lut[j - 1]);
       HIT_DIP_LUT = lut;
@@ -1637,23 +1641,36 @@
       if (idx > HIT_DIP_N) idx = HIT_DIP_N;
       return HIT_DIP_LUT[idx];
     }
-    return (HIT_DIP_MAX_DX * Math.sin(a) + HIT_DIP_MAX_UP * (1 - Math.cos(a))) * RUN_K;
+    return (HIT_DIP_MAX_DX * Math.sin(a) + HIT_DIP_MAX_UP * (1 - Math.cos(a))) * HIT_K;
   }
 
-  /* —— 跑步动画帧率上限（方案 C：只压高速段，低速段节奏原样保留）——
-     phase 是「游戏时间」的积分，animFrameOf 再把 phase 按 4 等分量化成帧号，
+  /* —— 跑步动画帧率（由速度决定，高速段封顶）——
+     phase 是「游戏时间」的积分，animFrameOf 再把 phase 按 RUN_COUNT 等分量化成帧号，
      所以 帧率 = 相位角速度 / (2π) × RUN_COUNT。据此「限制帧率」直接用「限制相位角速度」实现：
 
-       w = 6 + speed × 0.55   (rad/s)　← 原公式，低速段照旧
-       w ≤ RUN_W_MAX          (rad/s)　← 高速段封顶，恰好等于 RUN_FPS_MAX
+       w = (待机帧率 + (封顶帧率 − 待机帧率) × min(1, speed / 达标速度)) × 2π / RUN_COUNT
+       RUN_W_MAX = RUN_FPS_MAX × 2π / RUN_COUNT　← 封顶值，与帧数联动，改 RUN_COUNT 不失配
+
+     8 帧时：待机 6fps，speed ≈ 23 达 12fps 封顶。
+     （换算提示：旧 4 帧 @12fps = 3 步幅/秒；8 帧 @12fps = 1.5 步幅/秒，一个循环 667ms。
+       若要恢复原步频，把 RUN_FPS_MAX 改成 24 即可，其余一行不用动。）
 
      关键：这里封顶的是「速度 w」，不是「帧」——不做逐帧丢弃、不跳过帧号：
        · dt 始终完整参与积分，游戏物理 / 碰撞 / 计时一行未动；
        · 相位推进只取决于累计游戏时间，与渲染刷新率无关（60Hz 与 144Hz 同时长推进帧数一致）；
-       · 钳制函数连续，速度爬到门槛时相位速度不突变，也不会累积时间误差。
-     生效点：speed ≈ 23.36（约前 1100 距离）之前完全不干预，与改造前逐帧一致。 */
+       · 钳制函数连续，速度爬到门槛时相位速度不突变，也不会累积时间误差。 */
+  var RUN_FPS_IDLE = 6;                          // 待机帧率（fps）
   var RUN_FPS_MAX = 12;                          // 高速段动画帧率上限（fps）
-  var RUN_W_MAX = RUN_FPS_MAX * Math.PI / 2;     // 12fps → 6π ≈ 18.8496 rad/s
+  var RUN_SPEED_KNEE = 23;                       // 到此速度即达封顶帧率
+  var RUN_W_OF = function (fps) { return fps * 2 * Math.PI / RUN_COUNT; };
+  var RUN_W_MAX = RUN_W_OF(RUN_FPS_MAX);         // 12fps / 8 帧 → 3π ≈ 9.4248 rad/s
+
+  function animPhaseRate(speed) {
+    var t = speed / RUN_SPEED_KNEE;
+    if (t > 1) t = 1;
+    if (t < 0) t = 0;
+    return RUN_W_OF(RUN_FPS_IDLE + (RUN_FPS_MAX - RUN_FPS_IDLE) * t);
+  }
 
   function animPhaseRate(speed) {
     var w = 6 + speed * 0.55;
@@ -1681,7 +1698,7 @@
   };
   HIT_SHEET.src = HIT_SHEET_SRC;
 
-  // 帧号由 phase 推导：一个 phase 周期 = 一个完整步幅 = 一整套 4 帧，按四等分取。
+  // 帧号由 phase 推导：一个 phase 周期 = 一个完整步幅 = 一整套 8 帧，按八等分取。
   // phase 在 update 里由 dt 累积（见 update），所以动画速度只取决于游戏时间，
   // 与屏幕刷新率无关：60Hz 与 144Hz 下同样时长内推进的帧数一致。
   function animFrameOf(ph) {
@@ -1761,11 +1778,15 @@
       ctx.scale(u, u);
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
+      // 受击图与跑步帧各用各的尺度：受击图锁旧基准（HIT_*），跑步帧按新素材（RUN_*）；
+      // 两者锚点相同，所以状态切换时脚底落在同一条地面线上，不会瞬移。
+      var kk = useHit ? HIT_K : RUN_K;
+      var fU = useHit ? HIT_FRAME_U : RUN_FRAME_U;
       ctx.drawImage(
         useHit ? HIT_SHEET : RUN_SHEET,
         0, useHit ? 0 : frame * RUN_FRAME, RUN_FRAME, RUN_FRAME,
-        -RUN_ANCHOR_X * RUN_K, -RUN_ANCHOR_Y * RUN_K,
-        RUN_FRAME_U, RUN_FRAME_U
+        -RUN_ANCHOR_X * kk, -RUN_ANCHOR_Y * kk,
+        fU, fU
       );
     }
 
