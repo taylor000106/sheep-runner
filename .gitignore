@@ -56,3 +56,10 @@ desktop.ini
 node_modules/
 .venv/
 venv/
+
+# ---------- 设计参考原图（体量大、非交付物，仅本地保留） ----------
+design/
+
+# ---------- 预览目录里的内测截图 / QA 对比图（仅本地；正式预览见 run_*.gif） ----------
+assets/preview/ingame_*
+assets/preview/qa_*
