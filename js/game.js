@@ -37,6 +37,13 @@
   var elFinalDist = document.getElementById('finalDist');
   var elBest = document.getElementById('bestScore');
   var elBestStart = document.getElementById('bestStart');
+  var elStartSub = document.getElementById('startSub');
+  var elProgText = document.getElementById('progText');
+  var elProgFill = document.getElementById('progFill');
+  var elOverTitle = document.getElementById('overTitle');
+  var elOverSub = document.getElementById('overSub');
+  var elFinalTime = document.getElementById('finalTime');
+  var elRetry = document.getElementById('btnRetry');
   var BEST_KEY = 'sheepRunner.best';
 
   /* ============================================================
@@ -44,11 +51,19 @@
      ============================================================ */
   var BASE_SPEED = 11;      // 起始速度（世界单位/秒）
   var MAX_ADD = 19;         // 速度最多比初始快多少
+  var SPEED_CAP = BASE_SPEED + MAX_ADD;   // 速度硬上限（终点后不再加速）
   var SPAWN_DIST = 82;      // 物体生成的远处距离
   var LANE_X = [-1, 0, 1];  // 三条车道的世界坐标
 
+  // —— 关卡结构：有尽头的关卡，不是无尽跑 ——
+  // 改关卡长短只改 LEVEL_LENGTH 一处：开始页文案、HUD 进度条、终点门都读它。
+  var LEVEL_LENGTH = 800;      // 关卡总长（世界单位≈米）
+  var FINISH_FREE_ZONE = 110;  // 终点前这段距离内不再刷炸弹
+  var FINISH_CLEAR_ZONE = 26;  // 终点前这段距离内完全不刷物体（留出干净冲刺道）
+  var FINISH_ROLL = 1.15;      // 冲线后滑行到停的秒数（finishing 阶段）
+
   var G = {
-    state: 'ready',   // ready | playing | dying | over
+    state: 'ready',   // ready | playing | finishing | dying | over | won
     t: 0,
     distance: 0,
     bonus: 0,
@@ -58,6 +73,8 @@
     scroll: 0,
     spawnTimer: 1.4,
     dying: 0,
+    finishing: 0,    // 冲线滑行剩余时间（>0 表示在 finishing 状态）
+    runTime: 0,      // 本局用时（秒），结算显示
     shake: 0,
     objs: [],
     particles: [],
@@ -146,6 +163,22 @@
     ctx.fill();
   }
 
+  // x 固定的竖直面：沿 z 展开，高度从 y1 到 y2（世界单位，向上为正）。
+  // 站台立面、护栏横杆、广告牌都用它 —— 透视自动近大远小。
+  function worldPanel(x, z1, z2, y1, y2, color) {
+    var s1 = sOf(z1), s2 = sOf(z2);
+    if (s1 <= 0 || s2 <= 0) return;
+    var b1 = py(s1), b2 = py(s2);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(px(x, s1), b1 - y1 * SCALE * s1);
+    ctx.lineTo(px(x, s2), b2 - y1 * SCALE * s2);
+    ctx.lineTo(px(x, s2), b2 - y2 * SCALE * s2);
+    ctx.lineTo(px(x, s1), b1 - y2 * SCALE * s1);
+    ctx.closePath();
+    ctx.fill();
+  }
+
   function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
   function rnd(a, b) { return a + Math.random() * (b - a); }
   function hash(n) {
@@ -189,6 +222,13 @@
   function sfxFood() { tone(660, 0.10, 'triangle', 0.10, 0); tone(880, 0.10, 'triangle', 0.10, 0.075); tone(1320, 0.18, 'triangle', 0.09, 0.15); }
   function sfxShield() { tone(520, 0.08, 'square', 0.07, 0); tone(800, 0.12, 'square', 0.06, 0.06); }
   function sfxMove() { tone(430, 0.05, 'sine', 0.045, 0); }
+
+  function sfxWin() {
+    tone(660, 0.12, 'triangle', 0.10, 0);
+    tone(880, 0.12, 'triangle', 0.10, 0.10);
+    tone(1180, 0.22, 'triangle', 0.11, 0.21);
+    tone(1560, 0.34, 'triangle', 0.09, 0.33);
+  }
 
   function sfxBomb() {
     if (!actx) return;
@@ -293,8 +333,9 @@
   }
 
   function pickType() {
-    // 炸弹概率随距离缓慢上升
-    var pBomb = Math.min(0.5, 0.24 + G.distance / 9000);
+    // 炸弹概率随距离缓慢上升；终点前 FINISH_FREE_ZONE 内直接不刷炸弹
+    var nearFinish = (LEVEL_LENGTH - G.distance) < FINISH_FREE_ZONE;
+    var pBomb = nearFinish ? 0 : Math.min(0.5, 0.24 + G.distance / 9000);
     var r = Math.random();
     if (r < pBomb) return 'bomb';
     if (r < pBomb + 0.36) return 'coin';
@@ -375,20 +416,36 @@
     }
   }
 
-  function showGameOver() {
-    G.state = 'over';
-    var sc = Math.floor(G.distance) + G.bonus;
+  // 结算：won=true 通关，false 撞炸弹。两条结局共用同一张结算卡。
+  function showResult(won) {
+    G.state = won ? 'won' : 'over';
+    var dist = Math.min(G.distance, LEVEL_LENGTH);
+    var sc = Math.floor(dist) + G.bonus;
     if (sc > G.high) {
       G.high = sc;
       try { localStorage.setItem(BEST_KEY, String(sc)); } catch (e) {}
     }
     elFinal.textContent = sc;
     elFinalCoins.textContent = G.coins;
-    elFinalDist.textContent = Math.floor(G.distance) + ' m';
-    elBest.textContent = G.high;
-    elBestStart.textContent = G.high;
+    elFinalDist.textContent = Math.floor(dist) + ' m';
+    elFinalTime.textContent = G.runTime.toFixed(1) + ' s';
+elBest.textContent = G.high;
+elBestStart.textContent = G.high;
+    if (won) {
+      elOverTitle.textContent = '通关成功！';
+      elOverTitle.className = 'good';
+      elOverSub.textContent = '小羊一口气跑完了整条地铁线～';
+      elRetry.textContent = '再跑一次';
+    } else {
+      elOverTitle.textContent = '撞到炸弹啦！';
+      elOverTitle.className = 'bad';
+      elOverSub.textContent = '小羊被炸得满头卷毛～';
+      elRetry.textContent = '重新开始';
+    }
     elOver.classList.remove('hidden');
   }
+
+  function showGameOver() { showResult(false); }
 
   /* ============================================================
      7. 游戏流程
@@ -405,6 +462,8 @@
     G.spawnTimer = 1.2;
     G.dying = 0;
     G.shake = 0;
+    G.runTime = 0;
+    G.finishing = 0;
     G.bgFar = 0;
     G.bgNear = 0;
     vSk = 0;
@@ -479,13 +538,14 @@
       var base = BASE_SPEED * spdK + Math.min(MAX_ADD * spdK, G.distance * 0.011 * accK);
       player.boost = Math.max(0, player.boost - dt);
       player.invincible = Math.max(0, player.invincible - dt);
-      G.speed = base * (player.boost > 0 ? 1.35 : 1);
+      G.speed = Math.min(SPEED_CAP * 1.35, base * (player.boost > 0 ? 1.35 : 1));   // 硬上限：吃食物加速也不突破
       vSk = clamp(G.speed / (BASE_SPEED + MAX_ADD), 0, 1);
 
       G.distance += G.speed * dt;
       G.scroll += G.speed * dt;
       advanceBg(G.speed * dt, vSk);
       G.score = Math.floor(G.distance) + G.bonus;
+      G.runTime += dt;
 
       // 车道平滑移动
       player.x += (player.targetX - player.x) * Math.min(1, dt * 16);
@@ -495,7 +555,8 @@
       // 生成物体
       G.spawnTimer -= dt;
       if (G.spawnTimer <= 0) {
-        spawnWave();
+        // 终点前留最后一段干净的冲刺路：不再放任何物体（炸弹自然也没了）
+        if (G.distance < LEVEL_LENGTH - FINISH_CLEAR_ZONE) spawnWave();
         G.spawnTimer = nextSpawnDelay();
       }
 
@@ -515,6 +576,31 @@
       if (G.objs.length) {
         G.objs = G.objs.filter(function (o2) { return !o2.dead; });
       }
+
+      // —— 关卡终点：跑满 LEVEL_LENGTH 进入通关流程（有尽头，不再是无尽跑）——
+      if (G.distance >= LEVEL_LENGTH) {
+        G.distance = LEVEL_LENGTH;
+        G.state = 'finishing';
+        G.finishing = FINISH_ROLL;
+        G.spawnTimer = 999;
+        for (var w = 0; w < 5; w++) {
+          burst(centerX + (w - 2) * Math.min(W, 900) * 0.13, H * 0.28,
+            ['#ffd94a', '#68d391', '#7db8f0', '#ff9ab0', '#fff3c6'][w], 16, 0.95);
+        }
+        sfxWin();
+      }
+    } else if (G.state === 'finishing') {
+      // 冲线后滑行：只滚视觉，distance 锁在 LEVEL_LENGTH，速度单调降到 0
+      G.speed = Math.max(0, G.speed - 26 * dt);
+      vSk = clamp(G.speed / (BASE_SPEED + MAX_ADD), 0, 1);
+      G.scroll += G.speed * dt;
+      advanceBg(G.speed * dt, vSk);
+      player.x += (player.targetX - player.x) * Math.min(1, dt * 16);
+      player.phase += dt * animPhaseRate(G.speed);
+      player.animFrame = animFrameOf(player.phase);
+      for (var fo = 0; fo < G.objs.length; fo++) G.objs[fo].d -= G.speed * dt;
+      G.finishing -= dt;
+      if (G.finishing <= 0) showResult(true);
     } else if (G.state === 'dying') {
       G.speed *= Math.pow(0.015, dt);
       vSk = clamp(G.speed / (BASE_SPEED + MAX_ADD), 0, 1);
@@ -532,7 +618,7 @@
     updateHUD();
   }
 
-  var hudCache = { sc: -1, co: -1, sp: -1, di: -1, sh: null };
+  var hudCache = { sc: -1, co: -1, sp: -1, di: -1, sh: null, rem: -1, pg: -1 };
 
   function updateHUD() {
     var sc = G.score | 0, co = G.coins, sp = Math.round(G.speed * 3.6), di = Math.floor(G.distance);
@@ -540,6 +626,18 @@
     if (co !== hudCache.co) { elCoins.textContent = co; hudCache.co = co; }
     if (sp !== hudCache.sp) { elSpeed.textContent = sp; hudCache.sp = sp; }
     if (di !== hudCache.di) { elDist.textContent = di; hudCache.di = di; }
+
+    // 关卡进度：剩余距离 + 进度条（单一数据源 LEVEL_LENGTH）
+    var rem = Math.max(0, Math.ceil(LEVEL_LENGTH - Math.min(G.distance, LEVEL_LENGTH)));
+    var pg = Math.round(clamp(G.distance / LEVEL_LENGTH, 0, 1) * 1000) / 10;
+    if (rem !== hudCache.rem) {
+      elProgText.textContent = rem > 0 ? ('剩余 ' + rem + ' m') : '终点站到了';
+      hudCache.rem = rem;
+    }
+    if (pg !== hudCache.pg) {
+      elProgFill.style.width = pg + '%';
+      hudCache.pg = pg;
+    }
     var sh = player.invincible > 0;
     if (sh !== hudCache.sh) {
       if (sh) elShield.classList.remove('hidden');
@@ -615,8 +713,8 @@
   function drawBuildings() {
     // 远景用 bgFar、近景用 bgNear：两者累积速率不同，高速时差距被拉开
     var layers = [
-      { tile: 178, hMin: 46, hMax: 132, color: '#aac3e6', speed: 3.4, gap: 26, far: 1 },
-      { tile: 128, hMin: 34, hMax: 98, color: '#8ea8ce', speed: 6.6, gap: 18, far: 0 }
+      { tile: 178, hMin: 46, hMax: 132, color: '#b0c2d8', speed: 3.4, gap: 26, far: 1 },
+      { tile: 128, hMin: 34, hMax: 98, color: '#93a5bd', speed: 6.6, gap: 18, far: 0 }
     ];
     for (var L = 0; L < layers.length; L++) {
       var ly = layers[L];
@@ -675,116 +773,114 @@
   }
 
   function drawGround() {
+    // 城市地面：冷灰混凝土，越远越化进雾里（不再是大片绿草地）
     var g = ctx.createLinearGradient(0, horizonY, 0, H + 40);
-    g.addColorStop(0, '#9ade63');
-    g.addColorStop(0.30, '#82cf4e');
-    g.addColorStop(0.68, '#6cbd40');
-    g.addColorStop(1, '#4e9e35');
+    g.addColorStop(0.00, '#aab6c6');
+    g.addColorStop(0.20, '#8e9aab');
+    g.addColorStop(0.55, '#74808f');
+    g.addColorStop(1.00, '#5a6472');
     ctx.fillStyle = g;
     ctx.fillRect(-40, horizonY, W + 80, H - horizonY + 80);
 
-    // 草地修剪条纹：给“地面在动”一个明确的参照
-    var period = 4.2;
+    // 两侧站台铺装（比轨道亮一档，把视线压在中间轨道上）
+    worldQuad(-4, 600, -9.5, -2.46, '#a9b3c1');
+    worldQuad(-4, 600, 2.46, 9.5, '#a9b3c1');
+
+    // 站台砖缝：世界坐标固定，随 scroll 后移，给“地面在动”一个明确参照
+    var period = 2.4;
     var start = G.scroll % period;
-    for (var i = 0; i < 30; i++) {
+    for (var i = 0; i < 26; i++) {
       var z = i * period - start;
       if (z < -3) continue;
-      if (z > 78) break;
+      if (z > 54) break;
       var absI = Math.round((z + G.scroll) / period);
-      var col = (absI % 2 === 0) ? 'rgba(255,255,255,0.10)' : 'rgba(18,66,20,0.07)';
-      worldQuad(z, z + period * 0.5, -9, -1.68, col);
-      worldQuad(z, z + period * 0.5, 1.68, 9, col);
+      var col = (absI % 2 === 0) ? 'rgba(255,255,255,0.16)' : 'rgba(44,56,74,0.12)';
+      worldQuad(z, z + period * 0.5, -9.5, -2.46, col);
+      worldQuad(z, z + period * 0.5, 2.46, 9.5, col);
     }
   }
 
   function drawRoad() {
-    // 人行道
-    worldQuad(-4, 600, -4, -2.05, '#ccd2da');
-    worldQuad(-4, 600, 1.5, 2.05, '#ccd2da');
-    // 路缘
-    worldQuad(-4, 600, -1.58, -1.5, '#f1f6fb');
-    worldQuad(-4, 600, 1.5, 1.58, '#f1f6fb');
-    // 路面
-    worldQuad(-4, 600, -1.5, 1.5, '#565b6b');
-    worldQuad(-4, 600, -0.95, 0.95, '#5d6373');
+    // ===== 地铁轨道（替代原柏油马路）=====
 
-    // —— 沥青斑驳：世界坐标固定，透视下近大远小，不再是纯色灰面 ——
-    var pP = 3.6, pStart = G.scroll % pP;
+    // 道砟底色：比两侧站台暗一档，形成“下沉轨道”观感
+    worldQuad(-4, 600, -2.0, 2.0, '#39404e');
+    worldQuad(-4, 600, -1.72, 1.72, '#414a5a');
+
+    // —— 道砟碎石：世界坐标固定，近大远小 ——
+    var pP = 2.6, pStart = G.scroll % pP;
     for (var pi = 0; pi < 26; pi++) {
       var z0 = pi * pP - pStart;
       if (z0 < -3) continue;
-      if (z0 > 58) break;
+      if (z0 > 76) break;
       var absI = Math.round((z0 + G.scroll) / pP);
-      for (var sub = 0; sub < 3; sub++) {
+      for (var sub = 0; sub < 4; sub++) {
         var hA = hash(absI * 3.77 + sub * 17.3);
         var hB = hash(absI * 8.13 + sub * 31.7 + 5.5);
         var hC = hash(absI * 5.31 + sub * 9.1 + 2.2);
-        var zz = z0 + sub * pP * 0.33;
-        var xl = -1.44 + hA * 1.10;
-        var xw = 0.30 + hB * 1.30;
-        var xr = Math.min(1.44, xl + xw);
+        var zz = z0 + sub * pP * 0.25;
+        var xl = -1.66 + hA * 1.30;
+        var xw = 0.16 + hB * 0.42;
+        var xr = Math.min(1.66, xl + xw);
         if (xr <= xl + 0.02) continue;
-        var aA = 0.055 + hC * 0.085;              // 可见但不脏
-        var col = (hA > 0.48)
-          ? 'rgba(232,238,248,' + aA.toFixed(3) + ')'
-          : 'rgba(16,20,36,' + (aA * 1.15).toFixed(3) + ')';
-        worldQuad(zz, zz + pP * (0.20 + hB * 0.28), xl, xr, col);
+        var aA = 0.05 + hC * 0.09;
+        var col = (hA > 0.55)
+          ? 'rgba(200,212,230,' + aA.toFixed(3) + ')'
+          : 'rgba(12,16,26,' + (aA * 1.25).toFixed(3) + ')';
+        worldQuad(zz, zz + pP * (0.16 + hB * 0.22), xl, xr, col);
       }
     }
 
-    // 细颗粒：小尺寸碎点，近处才看得出，增加“沥青感”
-    for (var si = 0; si < 90; si++) {
-      var sd = hash(si * 2.71) * 30;
-      var sS = sOf(sd);
-      if (sS < 0.06) continue;
-      var sxc = -1.42 + hash(si * 5.19) * 2.84;
-      var sw = 0.05 + hash(si * 7.13) * 0.10;
-      var aS = 0.05 + hash(si * 3.31) * 0.10;
-      worldQuad(sd, sd + 0.35, sxc, sxc + sw,
-        hash(si * 11.7) > 0.5 ? 'rgba(240,246,255,' + aS.toFixed(3) + ')' : 'rgba(10,14,26,' + (aS * 1.2).toFixed(3) + ')');
+    // —— 枕木：横跨轨道，随 scroll 后移（枕木间距是“轨道在动”的主要参照）——
+    var tieP = 2.25;
+    var tieStart = G.scroll % tieP;
+    for (var ti = 0; ti < 52; ti++) {
+      var tz = ti * tieP - tieStart;
+      if (tz < -2.2) continue;
+      if (tz > 86) break;
+      var ta = clamp(1 - tz / 100, 0.22, 1);
+      worldQuad(tz, tz + 0.62, -1.74, 1.74, 'rgba(78,63,52,' + (0.94 * ta).toFixed(3) + ')');
+      worldQuad(tz, tz + 0.16, -1.74, 1.74, 'rgba(178,158,132,' + (0.50 * ta).toFixed(3) + ')');
+      worldQuad(tz + 0.46, tz + 0.62, -1.74, 1.74, 'rgba(18,14,12,' + (0.32 * ta).toFixed(3) + ')');
     }
 
-    // 轮胎磨痕：每条车道两道，强化“路面被碾过”的质感
-    for (var lw = 0; lw < 3; lw++) {
-      var cxw = LANE_X[lw];
-      worldQuad(-4, 600, cxw - 0.46, cxw - 0.24, 'rgba(10,14,26,0.10)');
-      worldQuad(-4, 600, cxw + 0.24, cxw + 0.46, 'rgba(10,14,26,0.10)');
-      worldQuad(-4, 600, cxw - 0.12, cxw + 0.12, 'rgba(255,255,255,0.035)');
+    // —— 钢轨：每条车道两根，连续贯穿 —— 地铁轨道的核心识别点
+    for (var li = 0; li < 3; li++) {
+      var lcx = LANE_X[li];
+      for (var ri = 0; ri < 2; ri++) {
+        var rx = lcx + (ri === 0 ? -0.52 : 0.52);
+        worldQuad(-4, 600, rx - 0.085, rx + 0.085, 'rgba(22,26,36,0.55)');       // 轨底投影
+        worldQuad(-4, 600, rx - 0.058, rx + 0.058, '#9aa5b8');                   // 轨面
+        worldQuad(-4, 600, rx - 0.050, rx - 0.020, 'rgba(250,253,255,0.75)');    // 受光高光
+        worldQuad(-4, 600, rx + 0.022, rx + 0.050, 'rgba(88,98,116,0.60)');      // 背光
+      }
     }
 
-    // 边线
-    worldQuad(-4, 600, -1.42, -1.36, 'rgba(255,255,255,0.96)');
-    worldQuad(-4, 600, 1.36, 1.42, 'rgba(255,255,255,0.96)');
+    // —— 站台：压顶石 + 黄色警示带 + 立面（路缘不再是白护栏，而是站台边）——
+    for (var sd = 0; sd < 2; sd++) {
+      var sgn = sd === 0 ? -1 : 1;
+      var inX = sgn * 2.00, midX = sgn * 2.18, outX = sgn * 2.46;
+      worldQuad(-4, 600, Math.min(inX, outX), Math.max(inX, outX), '#bcc5d2');       // 压顶
+      worldQuad(-4, 600, Math.min(inX, midX), Math.max(inX, midX), '#e6c257');       // 警示带
+      worldPanel(inX, -1.5, 600, 0, 0.20, '#7b8596');                                // 平台立面（轨道侧）
+      worldPanel(outX, -1.5, 600, 0, 0.26, '#9ba5b4');                               // 外侧立面
+    }
 
-    // 透视明暗：近亮远暗（渐变终点取屏幕底，避免亮端跑到屏幕外）
+    // —— 透视明暗：近端压暗、远端化雾（渐变终点取屏幕底，避开屏幕外亮端）——
     var sN = sOf(-4), sF = sOf(600);
     var yN = py(sN), yF = py(sF);
     var dg = ctx.createLinearGradient(0, yF, 0, H + 40);
-    dg.addColorStop(0, 'rgba(20,28,46,0.42)');
-    dg.addColorStop(0.30, 'rgba(16,24,42,0.18)');
-    dg.addColorStop(1, 'rgba(190,205,225,0.16)');
+    dg.addColorStop(0, 'rgba(24,32,48,0.38)');
+    dg.addColorStop(0.32, 'rgba(18,26,42,0.16)');
+    dg.addColorStop(1, 'rgba(176,190,210,0.14)');
     ctx.fillStyle = dg;
     ctx.beginPath();
-    ctx.moveTo(px(-1.5, sN), yN);
-    ctx.lineTo(px(1.5, sN), yN);
-    ctx.lineTo(px(1.5, sF), yF);
-    ctx.lineTo(px(-1.5, sF), yF);
+    ctx.moveTo(px(-2.0, sN), yN);
+    ctx.lineTo(px(2.0, sN), yN);
+    ctx.lineTo(px(2.0, sF), yF);
+    ctx.lineTo(px(-2.0, sF), yF);
     ctx.closePath();
     ctx.fill();
-
-    // 车道虚线（画在明暗层之上，保持清晰）
-    var period = 2.6, dashLen = 1.35, hw = 0.05;
-    var start = G.scroll % period;
-    var laneXs = [-0.5, 0.5];
-    for (var L = 0; L < laneXs.length; L++) {
-      var lx = laneXs[L];
-      for (var i = -1; i < 60; i++) {
-        var z = i * period - start;
-        if (z < -2.5) continue;
-        if (z > 130) break;
-        worldQuad(z, z + dashLen, lx - hw, lx + hw, 'rgba(255,255,255,0.93)');
-      }
-    }
   }
 
   function drawBush(X, Y, r, seed, s) {
@@ -905,35 +1001,68 @@
   }
 
   function drawSideProps() {
-    // 灌木：两侧绿化带
-    var step = 5.2;
-    var start = G.scroll % step;
-    for (var i = 34; i >= 0; i--) {
-      var z = i * step - start;
-      if (z < -2) continue;
-      var s = sOf(z);
-      if (s < 0.012) continue;
-      var r = 0.52 * SCALE * s;
-      if (r < 0.6) continue;
-      for (var sideI = 0; sideI < 2; sideI++) {
-        var side = sideI === 0 ? -1 : 1;
-        drawBush(px(side * 2.45, s), py(s), r, hash(i * 3.7 + sideI * 1.9), s);
+    // —— 站台护栏立柱：高度用世界坐标换算，透视下近粗远细 ——
+    var postStep = 3.2;
+    var postStart = G.scroll % postStep;
+    for (var pi = 24; pi >= 0; pi--) {
+      var pz = pi * postStep - postStart;
+      if (pz < -1.5) continue;
+      if (pz > 78) break;
+      var ps = sOf(pz);
+      if (ps < 0.02) continue;
+      var pu = SCALE * ps;
+      for (var si = 0; si < 2; si++) {
+        var X = px(si === 0 ? -2.62 : 2.62, ps);
+        ctx.strokeStyle = 'rgba(62,72,88,0.92)';
+        ctx.lineWidth = Math.max(1, 0.05 * pu);
+        ctx.beginPath();
+        ctx.moveTo(X, py(ps));
+        ctx.lineTo(X, py(ps) - 1.08 * pu);
+        ctx.stroke();
       }
     }
 
-    // 路灯：两侧交替
-    var stepL = 13;
+    // —— 护栏横杆：两道细长竖直面，自动向灭点收敛 ——
+    for (var hi = 0; hi < 2; hi++) {
+      var sgnR = hi === 0 ? -1 : 1;
+      worldPanel(sgnR * 2.62, -1.5, 92, 1.00, 1.07, 'rgba(128,140,158,0.95)');
+      worldPanel(sgnR * 2.62, -1.5, 92, 0.54, 0.59, 'rgba(98,110,128,0.92)');
+    }
+
+    // —— 灯箱广告牌：站外两侧交替出现，给出“城市地铁”氛围 ——
+    var bStep = 24;
+    var bStart = G.scroll % bStep;
+    for (var bi = 12; bi >= 0; bi--) {
+      var bz = bi * bStep - bStart;
+      if (bz < -2) continue;
+      if (bz > 84) break;
+      var absB = Math.round((bz + G.scroll) / bStep);
+      if (sOf(bz + 1.2) < 0.03) continue;
+      var bx = ((absB % 2 === 0) ? -1 : 1) * 3.4;
+      var hh = 1.35 + hash(absB * 2.3) * 0.75;
+      var tone = hash(absB * 7.1) > 0.5 ? '#4d8fb6' : '#c25f70';
+      // 支柱
+      worldPanel(bx, bz + 0.22, bz + 0.36, 0, 0.85, '#5b6577');
+      worldPanel(bx, bz + 2.24, bz + 2.38, 0, 0.85, '#5b6577');
+      // 灯箱面 + 顶部亮边
+      worldPanel(bx, bz, bz + 2.6, 0.85, 0.85 + hh, tone);
+      worldPanel(bx, bz, bz + 2.6, 0.85 + hh, 0.85 + hh + 0.10, 'rgba(238,246,255,0.9)');
+    }
+
+    // —— 站台灯柱：两侧交替（沿用原灯柱画法，配色已转冷）——
+    var stepL = 12.5;
     var startL = G.scroll % stepL;
-    for (var k = 26; k >= 0; k--) {
+    for (var k = 22; k >= 0; k--) {
       var zz = k * stepL - startL;
       if (zz < -2) continue;
+      if (zz > 88) break;
       var ss = sOf(zz);
-      if (ss < 0.02) continue;
+      if (ss < 0.022) continue;
       var absIdx = Math.round((zz + G.scroll) / stepL);
       var sideDir = (absIdx % 2 === 0) ? -1 : 1;
-      var X = px(sideDir * 2.15, ss);
-      if (X < -160 || X > W + 160) continue;
-      drawStreetLamp(X, py(ss), py(ss) - 3.4 * SCALE * ss, sideDir, ss);
+      var LX = px(sideDir * 2.28, ss);
+      if (LX < -180 || LX > W + 180) continue;
+      drawStreetLamp(LX, py(ss), py(ss) - 3.2 * SCALE * ss, sideDir, ss);
     }
   }
 
@@ -1252,6 +1381,85 @@
     var list = G.objs.slice();
     list.sort(function (a, b) { return b.d - a.d; });
     for (var i = 0; i < list.length; i++) drawObject(list[i]);
+  }
+  /* ---- 终点门：有尽头关卡的视觉终点，纯装饰，不参与任何碰撞 ---- */
+  function drawFinishGate() {
+    var d = LEVEL_LENGTH - G.distance;
+    if (d > 160 || d < 0.4) return;              // 太远看不见 / 已冲过（避免近平面处爆尺度）
+    var s = sOf(d);
+    var u = SCALE * s;
+    var yB = py(s);
+    var HW = 1.78;                               // 门洞半宽（世界单位）
+    var H_P = 3.25;                              // 立柱高
+    var BEAM_Y = 2.60, BEAM_H = 0.66;            // 横梁底高 / 梁高
+    var xL = px(-HW, s), xR = px(HW, s);
+
+    // 地面黑白终点线（世界坐标固定，透视下自然变形）
+    for (var r = 0; r < 2; r++) {
+      for (var c = 0; c < 7; c++) {
+        var cx = -1.75 + c * 0.5;
+        var col = ((r + c) % 2 === 0) ? 'rgba(248,250,255,0.92)' : 'rgba(38,46,60,0.88)';
+        worldQuad(d + 0.2 + r * 0.6, d + 0.2 + (r + 1) * 0.6, cx, cx + 0.5, col);
+      }
+    }
+
+    // 门柱：底部先落地阴影，避免立柱看起来悬空
+    var pw = Math.max(1.6, 0.26 * u);
+    for (var ps = 0; ps < 2; ps++) {
+      var pshx = ps === 0 ? xL : xR;
+      var shR = Math.max(3, 0.40 * u);
+      ctx.save();
+      ctx.translate(pshx, yB);
+      ctx.scale(1, 0.30);
+      var gsh = ctx.createRadialGradient(0, 0, shR * 0.15, 0, 0, shR);
+      gsh.addColorStop(0, 'rgba(10,20,36,0.46)');
+      gsh.addColorStop(0.6, 'rgba(10,20,36,0.22)');
+      gsh.addColorStop(1, 'rgba(10,20,36,0)');
+      ctx.fillStyle = gsh;
+      ctx.beginPath();
+      ctx.arc(0, 0, shR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.fillStyle = '#3b4560';
+    ctx.fillRect(xL - pw * 0.5, yB - H_P * u, pw, H_P * u);
+    ctx.fillRect(xR - pw * 0.5, yB - H_P * u, pw, H_P * u);
+    ctx.fillStyle = 'rgba(255,255,255,0.20)';
+    ctx.fillRect(xL - pw * 0.5, yB - H_P * u, Math.max(1, pw * 0.30), H_P * u);
+    ctx.fillRect(xR - pw * 0.5, yB - H_P * u, Math.max(1, pw * 0.30), H_P * u);
+
+    // 横梁 + 招牌
+    var bx = xL - pw * 0.5, bw = (xR - xL) + pw;
+    ctx.fillStyle = '#e4653f';
+    ctx.fillRect(bx, yB - H_P * u, bw, BEAM_H * u);
+    ctx.fillStyle = 'rgba(255,255,255,0.32)';
+    ctx.fillRect(bx, yB - H_P * u, bw, Math.max(1, 0.10 * u));
+
+    var fs = 0.42 * u;
+    if (fs > 5) {
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '900 ' + fs.toFixed(1) + 'px "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif';
+      ctx.fillStyle = '#fff8ea';
+      ctx.fillText('FINISH', (xL + xR) / 2, yB - H_P * u + BEAM_H * u * 0.55);
+      ctx.restore();
+    }
+
+    // 彩旗：挂在横梁下，轻轻摆动（纯视觉，G.t 驱动）
+    var flags = ['#f5cf74', '#8ed6ad', '#9cc2ea', '#f0aabb'];
+    var n = 9;
+    for (var f = 0; f < n; f++) {
+      var fx = xL + (xR - xL) * (f + 0.5) / n;
+      var wob = Math.sin(G.t * 4.2 + f * 0.7) * 0.02 * u;
+      ctx.fillStyle = flags[f % flags.length];
+      ctx.beginPath();
+      ctx.moveTo(fx - 0.10 * u, yB - BEAM_Y * u);
+      ctx.lineTo(fx + 0.10 * u, yB - BEAM_Y * u);
+      ctx.lineTo(fx + wob, yB - (BEAM_Y - 0.44) * u);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 
   /* ============================================================
@@ -1897,13 +2105,13 @@
     lastRenderT = G.t;
 
     var sk = vSk;
-    var playing = (G.state === 'playing' || G.state === 'dying');
+    var playing = (G.state === 'playing' || G.state === 'dying' || G.state === 'finishing');
 
     // 透视随速度轻微收紧：远处收敛更快、近处横向流动更明显
     vPersp = PERSP + 0.07 * sk;
 
     // 底色（防止震动时露出黑边）
-    ctx.fillStyle = '#5aa83f';
+    ctx.fillStyle = '#4a5261';
     ctx.fillRect(0, 0, W, H);
 
     ctx.save();
@@ -1957,6 +2165,7 @@
       }
     }
 
+    drawFinishGate();       // 关卡终点门：始终在所有物体更远处，所以先画
     drawObjects();
     drawPlayer();
     drawParticles();
@@ -1984,7 +2193,7 @@
       moveLane(1);
     } else if (k === ' ' || k === 'Enter' || k === 'Spacebar') {
       e.preventDefault();
-      if (G.state === 'ready' || G.state === 'over') startGame();
+      if (G.state === 'ready' || G.state === 'over' || G.state === 'won') startGame();
     }
   }, { passive: false });
 
@@ -2005,12 +2214,12 @@
     if (Math.abs(dx) > 26 && Math.abs(dx) > Math.abs(dy) * 1.15) {
       moveLane(dx > 0 ? 1 : -1);
     } else if (Math.abs(dx) < 26 && Math.abs(dy) < 26 && performance.now() - tStartT < 320) {
-      if (G.state === 'ready' || G.state === 'over') startGame();
+      if (G.state === 'ready' || G.state === 'over' || G.state === 'won') startGame();
     }
   }, { passive: true });
 
   cv.addEventListener('mousedown', function () {
-    if (G.state === 'ready' || G.state === 'over') startGame();
+    if (G.state === 'ready' || G.state === 'over' || G.state === 'won') startGame();
   });
 
   document.getElementById('btnStart').addEventListener('click', function (e) {
@@ -2050,6 +2259,8 @@
      16. 启动
      ============================================================ */
   resize();
+  // 关卡长度只有 LEVEL_LENGTH 一处定义，界面文案跟着它走，避免两处写死数字
+  elStartSub.innerHTML = '三车道飞驰，躲炸弹、捡金币、啃胡萝卜<br>跑完 ' + LEVEL_LENGTH + ' 米到终点站就算通关';
   resetGame();
   elBestStart.textContent = G.high;
   requestAnimationFrame(loop);

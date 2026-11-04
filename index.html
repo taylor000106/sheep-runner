@@ -22,12 +22,16 @@
       <div class="stat">距离 <b id="dist">0</b> m</div>
     </div>
     <div id="shield" class="hidden">无敌中</div>
+    <div id="progress">
+      <div class="prog-track"><i id="progFill"></i></div>
+      <div class="prog-text"><span id="progText">剩余 800 m</span><span class="prog-tag">终点站</span></div>
+    </div>
   </div>
 
   <div id="startScreen" class="overlay">
     <div class="card">
       <h1>小羊快跑</h1>
-      <div class="sub">三车道飞驰，躲炸弹、捡金币、啃胡萝卜<br>跑得越远分数越高</div>
+      <div class="sub" id="startSub">三车道飞驰，躲炸弹、捡金币、啃胡萝卜<br>跑到终点站就通关</div>
       <div class="keys">
         <div class="key">← → 切换车道</div>
         <div class="key">A / D 同上</div>
@@ -43,12 +47,13 @@
 
   <div id="overScreen" class="overlay hidden">
     <div class="card">
-      <h1 class="bad">撞到炸弹啦！</h1>
-      <div class="sub">小羊被炸得满头卷毛～</div>
+      <h1 class="bad" id="overTitle">撞到炸弹啦！</h1>
+      <div class="sub" id="overSub">小羊被炸得满头卷毛～</div>
       <div class="big-score" id="finalScore">0</div>
       <div class="rows">
         <div class="row"><span>金币</span><span id="finalCoins">0</span></div>
         <div class="row"><span>距离</span><span id="finalDist">0 m</span></div>
+        <div class="row"><span>用时</span><span id="finalTime">0 s</span></div>
         <div class="row"><span>最高纪录</span><span id="bestScore">0</span></div>
       </div>
       <button class="btn" id="btnRetry">重新开始</button>

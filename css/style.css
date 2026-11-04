@@ -41,6 +41,28 @@
   #shield.hidden{display:none;}
   @keyframes pulse{from{transform:translateX(-50%) scale(1);}to{transform:translateX(-50%) scale(1.07);}}
 
+  /* ---------------- 关卡进度条 ---------------- */
+  #progress{
+    position:absolute;left:50%;bottom:16px;transform:translateX(-50%);
+    width:min(72vw,440px);pointer-events:none;
+  }
+  .prog-track{
+    height:13px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.34);
+    box-shadow:inset 0 0 0 2px rgba(255,255,255,.62),0 8px 18px rgba(18,36,64,.28);
+  }
+  #progFill{
+    display:block;height:100%;width:0;border-radius:999px;
+    background:linear-gradient(90deg,#7ee08a,#ffd24a 58%,#ff8a4c);
+    box-shadow:0 0 10px rgba(255,214,110,.55);
+    transition:width .14s linear;
+  }
+  .prog-text{
+    display:flex;justify-content:space-between;margin-top:6px;
+    font-size:11px;font-weight:900;letter-spacing:1px;color:#fff;
+    text-shadow:0 1px 4px rgba(14,30,54,.72);
+  }
+  .prog-tag{opacity:.72;}
+
   /* ---------------- 遮罩层 ---------------- */
   .overlay{
     position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -60,6 +82,7 @@
   @keyframes pop{from{transform:scale(.86);opacity:0;}to{transform:scale(1);opacity:1;}}
   .card h1{font-size:27px;color:#2f4858;letter-spacing:1px;}
   .card h1.bad{color:#e2573f;}
+  .card h1.good{color:#2f9e57;}
   .card .sub{margin-top:8px;font-size:13px;color:#8a9daa;line-height:1.7;}
   .keys{display:flex;gap:8px;justify-content:center;margin:14px 0 4px;flex-wrap:wrap;}
   .key{
