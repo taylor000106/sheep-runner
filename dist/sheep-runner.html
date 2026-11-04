@@ -568,12 +568,18 @@
       G.bonus += 30;
       player.invincible = Math.max(player.invincible, 3.5);
       player.boost = Math.max(player.boost, 1.6);
+      // 拿到无敌的同一瞬间就把「无敌中」刷出来：否则同一帧内先吃食物再撞炸弹时，
+      // 判定认为无敌、玩家却看不到任何提示，正是「没无敌却撞碎」的观感来源。
+      syncShieldHud();
       addText(X, Y, '+30 无敌!', '#66e08a');
       burst(X, Y, '#8ef0a0', 24, 0.62);
       burst(X, Y, '#f2ffe8', 9, 0.44);
       sfxFood();
-    } else {
-      if (player.invincible > 0) {
+    } else if (o.type === 'bomb') {
+      // 严格规则：只有「确实处于无敌」且「HUD 已经在提示无敌」时才允许撞碎加分；
+      // 非无敌撞炸弹一律进入 dying（0.85s）→ 结算「撞到炸弹啦！」。
+      // 注意：这里显式判 bomb，不再用 else 兜底，避免将来新增物体类型被当成炸弹。
+      if (canSmashBomb()) {
         G.bonus += 5;
         addText(X, Y, '+5 撞碎!', '#ffb3c1');
         explode(X, Y, 0.55);
@@ -586,6 +592,9 @@
         G.dying = 0.85;
         sfxBomb();
       }
+    } else {
+      // 未知类型：既不致死也不加分（保守兜底，宁可漏判也不误杀）
+      if (window.console && console.warn) console.warn('[sheep] 未知物体类型: ' + o.type);
     }
   }
 
@@ -602,8 +611,8 @@
     elFinalCoins.textContent = G.coins;
     elFinalDist.textContent = Math.floor(dist) + ' m';
     elFinalTime.textContent = G.runTime.toFixed(1) + ' s';
-elBest.textContent = G.high;
-elBestStart.textContent = G.high;
+    if (elBest) elBest.textContent = G.high;
+    if (elBestStart) elBestStart.textContent = G.high;
     if (won) {
       elOverTitle.textContent = '通关成功！';
       elOverTitle.className = 'good';
@@ -648,8 +657,11 @@ elBestStart.textContent = G.high;
     player.targetX = 0;
     player.phase = 0;
     player.animFrame = 0;
+    // 每局都从「不无敌」开始：invincible 必须归零，同时立刻同步 HUD 徽标，
+    // 避免上一局残留的无敌状态影响本局第一次撞炸弹的判定
     player.invincible = 0;
     player.boost = 0;
+    syncShieldHud();
     updateHUD();
   }
 
@@ -741,7 +753,12 @@ elBestStart.textContent = G.high;
         if (o.dead) continue;
         // 穿过玩家平面时判定（与帧率无关，避免高速穿模）
         if (prevD > 0.35 && o.d <= 0.35) {
-          if (Math.abs(o.x - player.x) < 0.58) handleHit(o);
+          if (Math.abs(o.x - player.x) < 0.58) {
+            handleHit(o);
+            // 本帧已判定死亡/冲线：立刻停止处理剩余物体，
+            // 否则同一帧后面的食物/金币还会继续加分、继续飘字（死亡当帧仍“+30/+5”的乱象）
+            if (G.state !== 'playing') break;
+          }
         } else if (o.d < -3) {
           o.dead = true;
         }
@@ -811,12 +828,38 @@ elBestStart.textContent = G.high;
       elProgFill.style.width = pg + '%';
       hudCache.pg = pg;
     }
-    var sh = player.invincible > 0;
-    if (sh !== hudCache.sh) {
-      if (sh) elShield.classList.remove('hidden');
-      else elShield.classList.add('hidden');
-      hudCache.sh = sh;
+
+    syncShieldHud();
+  }
+
+  /* ---------------- 无敌：提示与判定的唯一来源 ----------------
+     规则：撞碎炸弹必须同时满足
+       1) player.invincible > 0
+       2) 「无敌中」徽标此刻是可见的
+     两条件由 syncShieldHud() 保证同一帧同步，所以不存在
+     「看不见提示却被判定为无敌」的情况。 */
+  function shieldVisible() {
+    return !!(elShield && !elShield.classList.contains('hidden'));
+  }
+
+  function canSmashBomb() {
+    return player.invincible > 0 && shieldVisible();
+  }
+
+  // 立即把「无敌中 + 剩余秒数」同步到 HUD（拿到无敌的那一刻就调用，不等下一帧）
+  function syncShieldHud() {
+    var inv = player.invincible > 0;
+    if (inv) {
+      var secs = Math.ceil(player.invincible * 10) / 10;
+      var txt = '无敌中 ' + secs.toFixed(1) + 's';
+      if (elShield.textContent !== txt) elShield.textContent = txt;
+      if (elShield.classList.contains('hidden')) elShield.classList.remove('hidden');
+    } else if (!elShield.classList.contains('hidden')) {
+      elShield.classList.add('hidden');
+      elShield.textContent = '无敌中';
     }
+    hudCache.sh = inv;
+    return inv;
   }
 
   /* ============================================================
